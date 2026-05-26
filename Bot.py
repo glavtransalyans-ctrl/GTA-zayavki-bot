@@ -9,113 +9,120 @@ URL = f"https://api.telegram.org/bot{TOKEN}"
 
 user_data = {}
 
-questions = [("date","Дата заявки?"),("contract","Номер договора?"),("carrier","Перевозчик?"),("loading","Адрес загрузки?"),("unloading","Адрес разгрузки?"),("cargo","Что за груз?"),("price","Стоимость перевозки?"),("payment","Условия оплаты?"),("driver","Водитель / телефон / машина?"),("extra","Дополнительные условия?")]
+questions = [
+    ("date", "Date?"),
+    ("contract", "Contract number?"),
+    ("carrier", "Carrier?"),
+    ("loading", "Loading address?"),
+    ("unloading", "Unloading address?"),
+    ("cargo", "Cargo?"),
+    ("price", "Price?"),
+    ("payment", "Payment terms?"),
+    ("driver", "Driver / phone / truck?"),
+    ("extra", "Extra conditions?")
+]
 
 def send_message(chat_id, text):
-  requests.post(
-  f"{URL}/sendMessage",
-  json={"chat_id": chat_id, "text": text}
-  )
+    requests.post(
+        f"{URL}/sendMessage",
+        json={"chat_id": chat_id, "text": text}
+    )
 
 def handle_text(chat_id, text):
     if text == "/start":
-        send_message(chat_id, "🚛 Главтрансальянс бот запущен!\n\nНапишите /new для создания заявки.")
+        send_message(chat_id, "Bot started. Type /new")
         return
 
     if text == "/new":
         user_data[chat_id] = {"step": 0, "answers": {}}
-        send_message(chat_id, "🚛 Создание новой заявки\n\n" + questions[0][1])
+        send_message(chat_id, questions[0][1])
         return
 
     if chat_id not in user_data:
-        send_message(chat_id, "Напишите /new для создания заявки.")
+        send_message(chat_id, "Type /new")
         return
 
     step = user_data[chat_id]["step"]
-    key, _ = questions[step]
+    key = questions[step][0]
 
     user_data[chat_id]["answers"][key] = text
     user_data[chat_id]["step"] += 1
 
-    if user_data[chat_id]["step"] < len(questions):
-        next_question = questions[user_data[chat_id]["step"]][1]
-        send_message(chat_id, next_question)
-        return
+    if user_data[chat_id]["step"] >= len(questions):
+        a = user_data[chat_id]["answers"]
 
-    a = user_data[chat_id]["answers"]
+        result = f"""
+NEW REQUEST
 
-    result = f"""
-✅ ЗАЯВКА ГОТОВА
-
-📅 Дата:
+Date:
 {a['date']}
 
-📄 Договор:
+Contract:
 {a['contract']}
 
-🚚 Перевозчик:
+Carrier:
 {a['carrier']}
 
-📍 Загрузка:
+Loading:
 {a['loading']}
 
-📍 Разгрузка:
+Unloading:
 {a['unloading']}
 
-📦 Груз:
+Cargo:
 {a['cargo']}
 
-💰 Стоимость:
+Price:
 {a['price']}
 
-💳 Оплата:
+Payment:
 {a['payment']}
 
-👤 Водитель:
+Driver:
 {a['driver']}
 
-⚠️ Доп. условия:
+Extra:
 {a['extra']}
 """
 
-    send_message(chat_id, result)
-    del user_data[chat_id]
+        send_message(chat_id, result)
+        del user_data[chat_id]
 
-def bot_loop():
+    else:
+        next_step = user_data[chat_id]["step"]
+        send_message(chat_id, questions[next_step][1])
+
+def poll():
     offset = 0
-    print("Бот запущен...")
 
     while True:
         try:
             r = requests.get(
                 f"{URL}/getUpdates",
-                params={"offset": offset, "timeout": 30}
-            )
-            data = r.json()
+                params={"timeout": 30, "offset": offset}
+            ).json()
 
-            for update in data.get("result", []):
+            for update in r["result"]:
                 offset = update["update_id"] + 1
 
-                message = update.get("message")
-                if not message:
-                    continue
+                if "message" in update and "text" in update["message"]:
+                    chat_id = update["message"]["chat"]["id"]
+                    text = update["message"]["text"]
 
-                chat_id = message["chat"]["id"]
-                text = message.get("text", "")
-
-                handle_text(chat_id, text)
+                    handle_text(chat_id, text)
 
         except Exception as e:
-            print("Ошибка:", e)
-            time.sleep(5)
+            print(e)
+
+        time.sleep(1)
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "GTA bot is running"
+    return "Bot is running"
 
-threading.Thread(target=bot_loop, daemon=True).start()
+threading.Thread(target=poll).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
