@@ -1,75 +1,61 @@
 import os
-
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+import time
+import threading
+import requests
+from flask import Flask
 
 TOKEN = os.getenv("TOKEN")
+URL = f"https://api.telegram.org/bot{TOKEN}"
 
 user_data = {}
 
 questions = [
-    ("date", "📅 Дата заявки?"),
-    ("contract", "📄 Номер договора?"),
-    ("carrier", "🚚 Перевозчик?"),
-    ("loading", "📍 Адрес загрузки?"),
-    ("unloading", "📍 Адрес разгрузки?"),
-    ("cargo", "📦 Что за груз?"),
-    ("price", "💰 Стоимость перевозки?"),
-    ("payment", "💳 Условия оплаты?"),
-    ("driver", "👤 Водитель / телефон / машина?"),
-    ("extra", "⚠️ Дополнительные условия?"),
+    ("date", "📅 Дата заявки?"),
+    ("contract", "📄 Номер договора?"),
+    ("carrier", "🚚 Перевозчик?"),
+    ("loading", "📍 Адрес загрузки?"),
+    ("unloading", "📍 Адрес разгрузки?"),
+    ("cargo", "📦 Что за груз?"),
+    ("price", "💰 Стоимость перевозки?"),
+    ("payment", "💳 Условия оплаты?"),
+    ("driver", "👤 Водитель / телефон / машина?"),
+    ("extra", "⚠️ Дополнительные условия?"),
 ]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🚛 Главтрансальянс бот запущен!\n\nНапишите /new для создания заявки."
-    )
+def send_message(chat_id, text):
+    requests.post(
+        f"{URL}/sendMessage",
+        json={"chat_id": chat_id, "text": text}
+    )
 
-async def new(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+def handle_text(chat_id, text):
+    if text == "/start":
+        send_message(chat_id, "🚛 Главтрансальянс бот запущен!\n\nНапишите /new для создания заявки.")
+        return
 
-    user_data[chat_id] = {
-        "step": 0,
-        "answers": {}
-    }
+    if text == "/new":
+        user_data[chat_id] = {"step": 0, "answers": {}}
+        send_message(chat_id, "🚛 Создание новой заявки\n\n" + questions[0][1])
+        return
 
-    await update.message.reply_text(
-        "🚛 Создание новой заявки\n\n" + questions[0][1]
-    )
+    if chat_id not in user_data:
+        send_message(chat_id, "Напишите /new для создания заявки.")
+        return
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    text = update.message.text
+    step = user_data[chat_id]["step"]
+    key, _ = questions[step]
 
-    if chat_id not in user_data:
-        await update.message.reply_text(
-            "Напишите /new для создания заявки."
-        )
-        return
+    user_data[chat_id]["answers"][key] = text
+    user_data[chat_id]["step"] += 1
 
-    step = user_data[chat_id]["step"]
+    if user_data[chat_id]["step"] < len(questions):
+        next_question = questions[user_data[chat_id]["step"]][1]
+        send_message(chat_id, next_question)
+        return
 
-    key, question = questions[step]
+    a = user_data[chat_id]["answers"]
 
-    user_data[chat_id]["answers"][key] = text
-
-    user_data[chat_id]["step"] += 1
-
-    if user_data[chat_id]["step"] < len(questions):
-        next_question = questions[user_data[chat_id]["step"]][1]
-
-        await update.message.reply_text(next_question)
-
-    else:
-        a = user_data[chat_id]["answers"]
-
-        result = f"""
+    result = f"""
 ✅ ЗАЯВКА ГОТОВА
 
 📅 Дата:
@@ -103,25 +89,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 {a['extra']}
 """
 
-        await update.message.reply_text(result)
+    send_message(chat_id, result)
+    del user_data[chat_id]
 
-        del user_data[chat_id]
+def bot_loop():
+    offset = 0
+    print("Бот запущен...")
 
-app = ApplicationBuilder().token(TOKEN).build()
+    while True:
+        try:
+            r = requests.get(
+                f"{URL}/getUpdates",
+                params={"offset": offset, "timeout": 30}
+            )
+            data = r.json()
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("new", new))
+            for update in data.get("result", []):
+                offset = update["update_id"] + 1
 
-app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle_message
-    )
-)
+                message = update.get("message")
+                if not message:
+                    continue
 
-print("Бот запущен...")
+                chat_id = message["chat"]["id"]
+                text = message.get("text", "")
 
-app.run_polling(
-    drop_pending_updates=True,
-    close_loop=False
-)
+                handle_text(chat_id, text)
+
+        except Exception as e:
+            print("Ошибка:", e)
+            time.sleep(5)
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "GTA bot is running"
+
+threading.Thread(target=bot_loop, daemon=True).start()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
