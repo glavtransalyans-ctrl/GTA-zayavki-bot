@@ -121,4 +121,4 @@ app.add_handler(
 
 print("Бот запущен...")
 
-app.run_polling()
+app.run_polling(drop_pending_updates=True)
