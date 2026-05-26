@@ -12,10 +12,10 @@ user_data = {}
 questions = [("date","Дата заявки?"),("contract","Номер договора?"),("carrier","Перевозчик?"),("loading","Адрес загрузки?"),("unloading","Адрес разгрузки?"),("cargo","Что за груз?"),("price","Стоимость перевозки?"),("payment","Условия оплаты?"),("driver","Водитель / телефон / машина?"),("extra","Дополнительные условия?")]
 
 def send_message(chat_id, text):
-    requests.post(
-        f"{URL}/sendMessage",
-        json={"chat_id": chat_id, "text": text}
-    )
+  requests.post(
+  f"{URL}/sendMessage",
+  json={"chat_id": chat_id, "text": text}
+  )
 
 def handle_text(chat_id, text):
     if text == "/start":
